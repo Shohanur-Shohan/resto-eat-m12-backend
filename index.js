@@ -63,13 +63,13 @@ async function run() {
           const query = { userEmail: email };
           const result = await usersCollection.findOne(query);
           const role = result?.role;
-          console.log(result);
+          // console.log(result);
 
           if (role) {
-            console.log(role, email, result);
+            // console.log(role, email, result);
             return res.send({ role: role });
           } else {
-            console.log(role, email, result);
+            // console.log(role, email, result);
             return res.send({ role: null });
           }
         }
@@ -152,6 +152,13 @@ async function run() {
         },
       };
       const result = await usersCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    //add item to db menu from /dashboard/add-items
+    app.post("/menu", async (req, res) => {
+      const menuItem = req?.body;
+      const result = await menuCollection.insertOne(menuItem);
       res.send(result);
     });
   } catch (error) {
