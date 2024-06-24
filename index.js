@@ -1,12 +1,13 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+require("dotenv").config();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const { ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(`${process.env.SECRET_KEY}`);
 //config
-require("dotenv").config();
 //middleware
 app.use(express.json());
 app.use(cors());
@@ -27,6 +28,7 @@ async function run() {
     const reviewsCollection = client.db("resto_eat").collection("reviews");
     const cartsCollection = client.db("resto_eat").collection("carts");
     const usersCollection = client.db("resto_eat").collection("users");
+    const paymentCollection = client.db("resto_eat").collection("payment");
 
     //middleware //verifyToken
     const verifyToken = (req, res, next) => {
@@ -129,6 +131,7 @@ async function run() {
     app.get("/users", verifyToken, async (req, res) => {
       // console.log(req.headers);
       const result = await usersCollection.find().toArray();
+
       res.send(result);
     });
 
@@ -161,6 +164,93 @@ async function run() {
       const result = await menuCollection.insertOne(menuItem);
       res.send(result);
     });
+    //stripe payment intent
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      // console.log(price);
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        // automatic_payment_methods: {
+        //   enabled: true,
+        // },
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    //payment done info to db
+    app.post(`/payment`, async (req, res) => {
+      const payment = req?.body;
+
+      const paymentResult = await paymentCollection.insertOne(payment);
+      // console.log(payment, "payment")
+
+      const query = {
+        _id: {
+          $in: payment?.user_CartIds.map( id => new ObjectId(id))
+        }
+      }
+      const deleteCartData = await cartsCollection.deleteMany(query);
+
+      res.send({paymentResult, deleteCartData});
+    });
+
+    //payment history
+    app.get('/payments/:email', verifyToken, async (req, res)=>{
+      const userEmail = req.params.email;
+
+      const decodedEmail = await req?.decoded?.userEmail;
+        if (userEmail !== decodedEmail) {
+          return res.status(403).send({ message: "Unauthorized access" });
+        }
+      const query = {
+        email: userEmail,
+      }
+      const result = await paymentCollection.find(query).toArray();
+      return res.send(result)
+    })
+
+    app.get('/admin_stats/:email', verifyToken, async (req, res) => {
+      try {
+        const userEmail = req.params.email;
+        const decodedEmail = req.decoded.userEmail;
+
+        if (userEmail !== decodedEmail) {
+          return res.status(403).send({ message: "Unauthorized access" });
+        }
+
+        const users = await usersCollection.estimatedDocumentCount();
+        const menus = await menuCollection.estimatedDocumentCount();
+        const orders = await paymentCollection.estimatedDocumentCount();
+        const result = await paymentCollection.aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: "$price",
+              }
+            }
+          }
+        ]).toArray();
+
+        const revenue = result.length > 0 ? result[0]?.totalRevenue : 0;
+        res.send( {users, menus, orders, revenue} );
+
+        //order status
+        
+
+      } catch (error) {
+        console.error("Error:", error);
+        return res.status(404).send({ message: "Not Found" });
+      }
+    });
+
   } catch (error) {
     console.log("Server Connection Failed!");
   }
