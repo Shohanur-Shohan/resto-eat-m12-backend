@@ -242,7 +242,6 @@ async function run() {
         const revenue = result.length > 0 ? result[0]?.totalRevenue : 0;
         res.send( {users, menus, orders, revenue} );
 
-        //order status
         
 
       } catch (error) {
@@ -251,11 +250,61 @@ async function run() {
       }
     });
 
+    //order status
+    app.get('/order-stats/:email', async(req, res)=>{
+      const result = await paymentCollection.aggregate([
+
+        {
+          $unwind: "$user_menuIds"
+        },
+        {
+          $addFields: {
+            "user_menuIds": {
+              $convert: {
+                input: "$user_menuIds",
+                to: "objectId",
+                onError: "$user_menuIds",
+                onNull: "$user_menuIds"
+              }
+            }
+          }
+        },
+        {
+          $lookup: {
+            from: "menu",
+            localField: "user_menuIds",
+            foreignField: "_id",
+            as: "Items"
+          }
+        },
+        {
+          $unwind: "$Items"
+        },
+        {
+          $group: {
+            _id: "$Items.category",
+            quantity: {$sum: 1},
+            revenue: {$sum: "$Items.price"},
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            category: "$_id",
+            quantity: "$quantity",
+            revenue: "$revenue"
+          }
+        }
+
+      ]).toArray();
+      res.send(result);
+    })
+
   } catch (error) {
     console.log("Server Connection Failed!");
   }
 }
 run();
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+  // console.log(`Example app listening on port ${port}`);
 });
