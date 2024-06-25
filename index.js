@@ -301,7 +301,7 @@ async function run() {
     })
 
   } catch (error) {
-    console.log("Server Connection Failed!");
+    // console.log("Server Connection Failed!");
   }
 }
 run();
